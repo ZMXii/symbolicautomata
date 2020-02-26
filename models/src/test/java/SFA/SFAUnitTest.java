@@ -96,17 +96,36 @@ public class SFAUnitTest {
 		SFA<CharPred, Character> autUnamb = getUnambSFA(ba);
 		SFA<CharPred, Character> epsAmb = getEpsAmbSFA(ba);
 		SFA<CharPred, Character> epsUnamb = getEpsUnambSFA(ba);
-
+		
 		List<Character> a = autAmb.getAmbiguousInput(ba);
 		List<Character> u = autUnamb.getAmbiguousInput(ba);
 
 		List<Character> aeps = epsAmb.getAmbiguousInput(ba);
 		List<Character> ueps = epsUnamb.getAmbiguousInput(ba);
-
+		
 		assertTrue(a != null);
 		assertTrue(u == null);
 		assertTrue(aeps != null);
 		assertTrue(ueps == null);
+	}
+
+	@Test
+	public void testAmbiguityV2() throws TimeoutException {
+		SFA<CharPred, Character> empty = getEmptySFA();
+		SFA<CharPred, Character> autAmb = getAmbSFA(ba);
+		SFA<CharPred, Character> autUnamb = getUnambSFA(ba);
+		SFA<CharPred, Character> autAmbLT = getAmbSFALessThan(ba);
+		// epsilon-ambiguous unsuitable -- we're assuming no epsilon
+		
+		List<Character> e = empty.getAmbiguousInputV2(ba);
+		List<Character> a = autAmb.getAmbiguousInputV2(ba);
+		List<Character> u = autUnamb.getAmbiguousInputV2(ba);
+		List<Character> lt = autAmbLT.getAmbiguousInputV2(ba);
+		
+		assertTrue(e == null);
+		assertTrue(a != null);
+		assertTrue(u == null);
+		assertTrue(lt != null);
 	}
 
 	@Test
@@ -481,6 +500,23 @@ public class SFAUnitTest {
 		transitionsB.add(new SFAInputMove<CharPred, Character>(0, 2, allAlpha));
 		try {
 			return SFA.MkSFA(transitionsB, 0, Arrays.asList(1), ba);
+		} catch (TimeoutException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+		return null;
+	}
+	
+	// test logic to exclude duplicate permutations of states
+	private SFA<CharPred, Character> getAmbSFALessThan(UnaryCharIntervalSolver ba) {
+
+		Collection<SFAMove<CharPred, Character>> transitionsA = new LinkedList<SFAMove<CharPred, Character>>();
+		transitionsA.add(new SFAInputMove<CharPred, Character>(0, 1, a));
+		transitionsA.add(new SFAInputMove<CharPred, Character>(0, 2, a));
+		transitionsA.add(new SFAInputMove<CharPred, Character>(2, 3, new CharPred('a', 'b')));
+		transitionsA.add(new SFAInputMove<CharPred, Character>(1, 4, a));
+		try {
+			return SFA.MkSFA(transitionsA, 0, Arrays.asList(3, 4), ba);
 		} catch (TimeoutException e) {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
