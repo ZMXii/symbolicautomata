@@ -28,6 +28,7 @@ import theory.BooleanAlgebra;
 import utilities.Block;
 import utilities.Pair;
 import utilities.Timers;
+import utilities.Triple;
 import utilities.UnionFindHopKarp;
 
 /**
@@ -1648,6 +1649,121 @@ public class SFA<P, S> extends Automaton<P, S> {
 			}
 		}
 		return null;
+	}
+	
+	/**
+	 * Returns an SFA that accepts only inputs that are ambiguous for this SFA
+	 * 
+	 * @return product SFA that accepts inputs that are ambiguous for this SFA
+	 * @throws TimeoutException
+	 */
+	public SFA<P, S> getAmbiguousInputsSFA(BooleanAlgebra<P, S> ba) throws TimeoutException {
+		return getAmbiguousInputsSFA(this, ba);
+	}
+	
+	/**
+	 * Returns an SFA that accepts only inputs that are ambiguous for <code>aut</code>
+	 * 
+	 * @return product SFA that accepts inputs that are ambiguous for <code>aut</code>
+	 * @throws TimeoutException
+	 */
+	public static <A, B> SFA<A, B> getAmbiguousInputsSFA(SFA<A, B> aut, BooleanAlgebra<A, B> ba) throws TimeoutException {
+
+		SFA<A, B> autNoEpsilon = removeEpsilonMovesFrom(aut, ba);
+		SFA<A, B> aut1 = autNoEpsilon;
+		SFA<A, B> aut2 = autNoEpsilon;
+
+		SFA<A, B> product = new SFA<A, B>();
+
+		// Map product states to IDs
+		// Product state contains three components: aut1 state ID, aut2 state ID, ambiguity indicator
+		HashMap<Pair<Pair<Integer, Integer>, Boolean>, Integer> reached = new HashMap<Pair<Pair<Integer, Integer>, Boolean>, Integer>();
+		// list on unexplored product states
+		LinkedList<Pair<Pair<Integer, Integer>, Boolean>> toVisit = new LinkedList<Pair<Pair<Integer, Integer>, Boolean>>();
+
+		// The initial state is the pair consisting of the initial states of aut1 and aut2
+		// Ambiguity indicator defaults to false
+		Pair<Pair<Integer, Integer>, Boolean> initStatePair = new Pair<Pair<Integer, Integer>, Boolean>(
+				new Pair<Integer, Integer>(aut1.initialState, aut2.initialState), false);
+		product.initialState = 0;
+		product.states.add(0);
+
+		reached.put(initStatePair, 0);
+		toVisit.add(initStatePair);
+
+		int totStates = 1;
+
+		while (!toVisit.isEmpty()) {
+			
+			// For every reachable pair of states
+			Pair<Pair<Integer, Integer>, Boolean> currState = toVisit.removeFirst();
+			int st1 = currState.first.first;
+			int st2 = currState.first.second;
+			boolean isAmbiguous = currState.second; 
+			int currStateId = reached.get(currState);
+
+			// Product state is final if both component states are final and
+			// ambiguity indicator is true
+			if (aut1.isFinalState(st1) && aut2.isFinalState(st2) && isAmbiguous)
+				product.finalStates.add(currStateId);
+
+			// For every pair of transitions from current states
+			for (SFAInputMove<A, B> t1 : aut1.getInputMovesFrom(st1)) {
+				for (SFAInputMove<A, B> t2 : aut2.getInputMovesFrom(st2)) {
+					
+					// Add transition to product SFA if conjunction is satisfiable
+					A intersGuard = ba.MkAnd(t1.guard, t2.guard);
+					if (ba.IsSatisfiable(intersGuard)) {
+						
+						// To state is ambiguous if component states are different
+						// or current state is ambiguous
+						boolean toAmbiguous = isAmbiguous || t1.to != t2.to;
+
+						// Create new product transition and add it to transitions
+						Pair<Pair<Integer, Integer>, Boolean> nextState = new Pair<Pair<Integer, Integer>, Boolean>(
+								new Pair<Integer, Integer>(t1.to, t2.to), toAmbiguous);
+						int nextStateId = 0;
+
+						if (!reached.containsKey(nextState)) {
+							nextStateId = totStates;
+							product.inputMovesTo.put(nextStateId, new HashSet<SFAInputMove<A, B>>());
+							reached.put(nextState, nextStateId);
+							toVisit.add(nextState);
+							product.states.add(nextStateId);
+							totStates++;
+						} else
+							nextStateId = reached.get(nextState);
+
+						product.addTransition(new SFAInputMove<A, B>(currStateId, nextStateId, intersGuard), ba, true);
+					}
+				}
+			}
+		}
+
+		product = removeDeadOrUnreachableStates(product, ba);
+		return product;
+	}
+	
+	/**
+	 * Returns ambiguous input accepted by automaton
+	 * 
+	 * @return ambiguous input accepted by automaton,
+	 *         or null if automaton is unambiguous
+	 * @throws TimeoutException
+	 */
+	public List<S> getAmbiguousInputV2(BooleanAlgebra<P, S> ba) throws TimeoutException {
+		return getAmbiguousInputV2(this, ba);
+	}
+	
+	/**
+	 * Returns ambiguous input accepted by <code>aut</code>
+	 * 
+	 * @return ambiguous input accepted by <code>aut</code>,
+	 *         or null if <code>aut</code> is unambiguous
+	 * @throws TimeoutException
+	 */
+	public static <A, B> List<B> getAmbiguousInputV2(SFA<A, B> aut, BooleanAlgebra<A, B> ba) throws TimeoutException {
+		return getAmbiguousInputsSFA(aut, ba).getWitness(ba);
 	}
 
 	/**
