@@ -1771,18 +1771,18 @@ public class SFA<P, S> extends Automaton<P, S> {
 
 		while (!toVisit.isEmpty()) {
 			
-			// For every reachable pair of states
+			// For every reachable set of substates
 			Pair<ArrayList<Integer>, ArrayList<ArrayList<Boolean>>> currState = toVisit.removeFirst();
 			int currStateId = reached.get(currState);
 			ArrayList<Integer> currSubstates = currState.first;
 			ArrayList<ArrayList<Boolean>> currAmbiguity = currState.second;
 
-			// Product state is final if both sub-states are final and ambiguity indicator is true
+			// Product state is final if all substates are final and all paths are distinct
 			if (areSubstatesFinal(autNoEpsilon, currSubstates) && isStateAmbiguous(currAmbiguity)) {
 				product.finalStates.add(currStateId);
 			}
 
-			// For every pair of transitions from current states
+			// For every combination of transitions from current substates
 			LinkedList<Pair<ArrayList<SFAInputMove<A, B>>, A>> transitionsOut = genTransitionsForKAmb(autNoEpsilon, ba, currSubstates, 0);
 			for (Pair<ArrayList<SFAInputMove<A, B>>, A> transitionCombo : transitionsOut) {
 				
@@ -1879,7 +1879,7 @@ public class SFA<P, S> extends Automaton<P, S> {
 				}
 				ArrayList<SFAInputMove<A, B>> transitionCombo = (ArrayList<SFAInputMove<A, B>>) otherTransCombo.first.clone();
 				transitionCombo.add(transition);
-				transitions.add(new Pair<ArrayList<SFAInputMove<A, B>>, A>(transitionCombo, transition.guard));
+				transitions.add(new Pair<ArrayList<SFAInputMove<A, B>>, A>(transitionCombo, intersGuard));
 			}
 		}
 		
@@ -1898,7 +1898,7 @@ public class SFA<P, S> extends Automaton<P, S> {
 		for (int i = 0; i < k; i++) {
 			ArrayList<Boolean> row = new ArrayList<Boolean>(k);
 			for (int j = 0; j < k; j++) {
-				if (i == j) {
+				if (i == j) {  // same path
 					row.add(new Boolean(false));
 				} else if (prevAmbiguity.get(i).get(j)) {  // pair distinct if previously distinct
 					row.add(new Boolean(true));
@@ -1912,6 +1912,26 @@ public class SFA<P, S> extends Automaton<P, S> {
 		}
 		
 		return ambiguity;
+	}
+	
+	/**
+	 * Returns k-ambiguous input accepted by this SFA.
+	 * 
+	 * @return k-ambiguous input accepted by automaton, or null if automaton is < k ambiguous
+	 * @throws TimeoutException
+	 */
+	public List<S> getKAmbiguousInput(BooleanAlgebra<P, S> ba, int k) throws TimeoutException {
+		return getKAmbiguousInput(this, ba, k);
+	}
+	
+	/**
+	 * Returns k-ambiguous input accepted by <code>aut</code>.
+	 * 
+	 * @return k-ambiguous input accepted by <code>aut</code>, or null if <code>aut</code> is < k ambiguous
+	 * @throws TimeoutException
+	 */
+	public static <A, B> List<B> getKAmbiguousInput(SFA<A, B> aut, BooleanAlgebra<A, B> ba, int k) throws TimeoutException {
+		return getKAmbiguousInputsSFA(aut, ba, k).getWitness(ba);
 	}
 	
 	/**
