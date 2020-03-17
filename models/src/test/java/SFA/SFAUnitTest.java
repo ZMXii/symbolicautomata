@@ -96,6 +96,8 @@ public class SFAUnitTest {
 		SFA<CharPred, Character> autUnamb = getUnambSFA(ba);
 		SFA<CharPred, Character> epsAmb = getEpsAmbSFA(ba);
 		SFA<CharPred, Character> epsUnamb = getEpsUnambSFA(ba);
+		SFA<CharPred, Character> autAmbSL = getAmbSFATestStateLabel(ba);
+		SFA<CharPred, Character> autKAmb = getKAmbSFA(ba);
 		
 		List<Character> a = autAmb.getAmbiguousInput(ba);
 		List<Character> u = autUnamb.getAmbiguousInput(ba);
@@ -103,29 +105,41 @@ public class SFAUnitTest {
 		List<Character> aeps = epsAmb.getAmbiguousInput(ba);
 		List<Character> ueps = epsUnamb.getAmbiguousInput(ba);
 		
+		List<Character> asl = autAmbSL.getAmbiguousInput(ba);
+		List<Character> ka = autKAmb.getAmbiguousInput(ba);
+		
 		assertTrue(a != null);
 		assertTrue(u == null);
 		assertTrue(aeps != null);
 		assertTrue(ueps == null);
+		assertTrue(asl == null);
+		assertTrue(ka == null);
 	}
 
 	@Test
-	public void testAmbiguityV2() throws TimeoutException {
-		SFA<CharPred, Character> empty = getEmptySFA();
+	public void testAmbiguityStearnsHunt() throws TimeoutException {
+		SFA<CharPred, Character> empty = SFA.getEmptySFA(ba);
 		SFA<CharPred, Character> autAmb = getAmbSFA(ba);
 		SFA<CharPred, Character> autUnamb = getUnambSFA(ba);
-		SFA<CharPred, Character> autAmbLT = getAmbSFALessThan(ba);
+		SFA<CharPred, Character> autAmbSL = getAmbSFATestStateLabel(ba);
+		SFA<CharPred, Character> autKAmb = getKAmbSFA(ba);
 		// epsilon-ambiguous unsuitable -- we're assuming no epsilon
 		
-		List<Character> e = empty.getAmbiguousInputV2(ba);
-		List<Character> a = autAmb.getAmbiguousInputV2(ba);
-		List<Character> u = autUnamb.getAmbiguousInputV2(ba);
-		List<Character> lt = autAmbLT.getAmbiguousInputV2(ba);
+		List<Character> e = empty.getKAmbiguousInput(ba, 2);
+		List<Character> a = autAmb.getKAmbiguousInput(ba, 2);
+		List<Character> u = autUnamb.getKAmbiguousInput(ba, 2);
+		List<Character> asl = autAmbSL.getKAmbiguousInput(ba, 2);
+		List<Character> ka = autKAmb.getKAmbiguousInput(ba, 2);
 		
 		assertTrue(e == null);
 		assertTrue(a != null);
 		assertTrue(u == null);
-		assertTrue(lt != null);
+		assertTrue(asl != null);
+		assertTrue(ka != null);
+		
+		assertTrue(empty.getMaxAmbiguity(ba, 5) == 0);
+		assertTrue(autAmb.getMaxAmbiguity(ba, 5) == 5);
+		assertTrue(autKAmb.getMaxAmbiguity(ba, 5) == 3);
 	}
 
 	@Test
@@ -508,15 +522,34 @@ public class SFAUnitTest {
 	}
 	
 	// test logic to exclude duplicate permutations of states
-	private SFA<CharPred, Character> getAmbSFALessThan(UnaryCharIntervalSolver ba) {
+	private SFA<CharPred, Character> getAmbSFATestStateLabel(UnaryCharIntervalSolver ba) {
 
 		Collection<SFAMove<CharPred, Character>> transitionsA = new LinkedList<SFAMove<CharPred, Character>>();
 		transitionsA.add(new SFAInputMove<CharPred, Character>(0, 1, a));
 		transitionsA.add(new SFAInputMove<CharPred, Character>(0, 2, a));
-		transitionsA.add(new SFAInputMove<CharPred, Character>(2, 3, new CharPred('a', 'b')));
+		transitionsA.add(new SFAInputMove<CharPred, Character>(2, 3, a));
 		transitionsA.add(new SFAInputMove<CharPred, Character>(1, 4, a));
 		try {
 			return SFA.MkSFA(transitionsA, 0, Arrays.asList(3, 4), ba);
+		} catch (TimeoutException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+		return null;
+	}
+	
+	private SFA<CharPred, Character> getKAmbSFA(UnaryCharIntervalSolver ba) {
+
+		Collection<SFAMove<CharPred, Character>> transitionsA = new LinkedList<SFAMove<CharPred, Character>>();
+		transitionsA.add(new SFAInputMove<CharPred, Character>(0, 1, a));
+		transitionsA.add(new SFAInputMove<CharPred, Character>(0, 2, a));
+		transitionsA.add(new SFAInputMove<CharPred, Character>(0, 3, a));
+		transitionsA.add(new SFAInputMove<CharPred, Character>(1, 99, a));
+		transitionsA.add(new SFAInputMove<CharPred, Character>(2, 99, a));
+		transitionsA.add(new SFAInputMove<CharPred, Character>(3, 99, a));
+		
+		try {
+			return SFA.MkSFA(transitionsA, 0, Arrays.asList(99), ba);
 		} catch (TimeoutException e) {
 			// TODO Auto-generated catch block
 			e.printStackTrace();

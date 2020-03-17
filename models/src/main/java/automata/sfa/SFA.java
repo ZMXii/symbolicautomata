@@ -7,7 +7,9 @@
 package automata.sfa;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedList;
@@ -15,6 +17,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.Stack;
+import java.lang.Math;
 
 import org.sat4j.specs.TimeoutException;
 
@@ -28,7 +31,6 @@ import theory.BooleanAlgebra;
 import utilities.Block;
 import utilities.Pair;
 import utilities.Timers;
-import utilities.Triple;
 import utilities.UnionFindHopKarp;
 
 /**
@@ -1541,8 +1543,6 @@ public class SFA<P, S> extends Automaton<P, S> {
 		reachedRev.put(0, initStatePair);
 		toVisit.add(initStatePair);
 
-		int totStates = 1;
-
 		while (!toVisit.isEmpty()) {
 			Pair<Pair<Integer, Integer>, Boolean> currState = toVisit.removeFirst();
 			int st1 = currState.first.first;
@@ -1561,37 +1561,20 @@ public class SFA<P, S> extends Automaton<P, S> {
 			for (SFAInputMove<A, B> t1 : aut1.getInputMovesFrom(st1))
 				for (SFAInputMove<A, B> t2 : aut2.getInputMovesFrom(st2)) {
 
-					if (t1.to >= t2.to) {
-						// create conjunction of the two guards and
-						// create
-						// transition only if the conjunction is
-						// satisfiable
-						A intersGuard = ba.MkAnd(t1.guard, t2.guard);
-						if (ba.IsSatisfiable(intersGuard)) {
+					// create conjunction of the two guards and
+					// create
+					// transition only if the conjunction is
+					// satisfiable
+					A intersGuard = ba.MkAnd(t1.guard, t2.guard);
+					if (ba.IsSatisfiable(intersGuard)) {
 
-							// Create new product transition and add it
-							// to
-							// transitions
-							Pair<Pair<Integer, Integer>, Boolean> nextState = new Pair<Pair<Integer, Integer>, Boolean>(
-									new Pair<Integer, Integer>(t1.to, t2.to), true);
-							int nextStateId = 0;
-
-							if (!reached.containsKey(nextState)) {
-								product.inputMovesTo.put(totStates, new HashSet<SFAInputMove<A, B>>());
-
-								reached.put(nextState, totStates);
-								reachedRev.put(totStates, nextState);
-
-								toVisit.add(nextState);
-								product.states.add(totStates);
-								nextStateId = totStates;
-								totStates++;
-							} else
-								nextStateId = reached.get(nextState);
-
-							product.addTransition(new SFAInputMove<A, B>(currStateId, nextStateId, intersGuard), ba,
-									true);
-						}
+						// Create new product transition and add it
+						// to
+						// transitions
+						Pair<Pair<Integer, Integer>, Boolean> nextState = new Pair<Pair<Integer, Integer>, Boolean>(
+								new Pair<Integer, Integer>(Math.min(t1.to, t2.to), Math.max(t1.to, t2.to)), true);
+						int nextStateId = getStateId(nextState, reached, toVisit, product);
+						product.addTransition(new SFAInputMove<A, B>(currStateId, nextStateId, intersGuard), ba, true);
 					}
 				}
 
@@ -1605,25 +1588,11 @@ public class SFA<P, S> extends Automaton<P, S> {
 				for (Integer state1 : epsilonClosure1)
 					for (Integer state2 : epsilonClosure2) {
 						// Avoid self epsilon loop
-						if ((state1 != st1 || state2 != st2) && state1>=state2) {
+						if (state1 != st1 || state2 != st2) {
 
 							Pair<Pair<Integer, Integer>, Boolean> nextState = new Pair<Pair<Integer, Integer>, Boolean>(
-									new Pair<Integer, Integer>(state1, state2), false);
-							int nextStateId = 0;
-
-							if (!reached.containsKey(nextState)) {
-								product.inputMovesTo.put(totStates, new HashSet<SFAInputMove<A, B>>());
-
-								reached.put(nextState, totStates);
-								reachedRev.put(totStates, nextState);
-
-								toVisit.add(nextState);
-								product.states.add(totStates);
-								nextStateId = totStates;
-								totStates++;
-							} else
-								nextStateId = reached.get(nextState);
-
+									new Pair<Integer, Integer>(Math.min(state1, state2), Math.max(state1, state2)), false);
+							int nextStateId = getStateId(nextState, reached, toVisit, product);
 							product.addTransition(new SFAEpsilon<A, B>(currStateId, nextStateId), ba, true);
 						}
 					}
@@ -1652,7 +1621,7 @@ public class SFA<P, S> extends Automaton<P, S> {
 	}
 	
 	/**
-	 * Returns an SFA that accepts only inputs that are ambiguous for this SFA
+	 * Returns an SFA that accepts only inputs that are ambiguous for this SFA.
 	 * 
 	 * @return product SFA that accepts inputs that are ambiguous for this SFA
 	 * @throws TimeoutException
@@ -1662,7 +1631,8 @@ public class SFA<P, S> extends Automaton<P, S> {
 	}
 	
 	/**
-	 * Returns an SFA that accepts only inputs that are ambiguous for <code>aut</code>
+	 * Returns an SFA that accepts only inputs that are ambiguous for <code>aut</code>.
+	 * Uses Stearns and Hunt's algorithm.
 	 * 
 	 * @return product SFA that accepts inputs that are ambiguous for <code>aut</code>
 	 * @throws TimeoutException
@@ -1670,9 +1640,6 @@ public class SFA<P, S> extends Automaton<P, S> {
 	public static <A, B> SFA<A, B> getAmbiguousInputsSFA(SFA<A, B> aut, BooleanAlgebra<A, B> ba) throws TimeoutException {
 
 		SFA<A, B> autNoEpsilon = removeEpsilonMovesFrom(aut, ba);
-		SFA<A, B> aut1 = autNoEpsilon;
-		SFA<A, B> aut2 = autNoEpsilon;
-
 		SFA<A, B> product = new SFA<A, B>();
 
 		// Map product states to IDs
@@ -1684,14 +1651,12 @@ public class SFA<P, S> extends Automaton<P, S> {
 		// The initial state is the pair consisting of the initial states of aut1 and aut2
 		// Ambiguity indicator defaults to false
 		Pair<Pair<Integer, Integer>, Boolean> initStatePair = new Pair<Pair<Integer, Integer>, Boolean>(
-				new Pair<Integer, Integer>(aut1.initialState, aut2.initialState), false);
+				new Pair<Integer, Integer>(autNoEpsilon.initialState, autNoEpsilon.initialState), false);
 		product.initialState = 0;
 		product.states.add(0);
 
 		reached.put(initStatePair, 0);
 		toVisit.add(initStatePair);
-
-		int totStates = 1;
 
 		while (!toVisit.isEmpty()) {
 			
@@ -1699,17 +1664,17 @@ public class SFA<P, S> extends Automaton<P, S> {
 			Pair<Pair<Integer, Integer>, Boolean> currState = toVisit.removeFirst();
 			int st1 = currState.first.first;
 			int st2 = currState.first.second;
-			boolean isAmbiguous = currState.second; 
+			boolean isStateAmbiguous = currState.second; 
 			int currStateId = reached.get(currState);
 
 			// Product state is final if both component states are final and
 			// ambiguity indicator is true
-			if (aut1.isFinalState(st1) && aut2.isFinalState(st2) && isAmbiguous)
+			if (autNoEpsilon.isFinalState(st1) && autNoEpsilon.isFinalState(st2) && isStateAmbiguous)
 				product.finalStates.add(currStateId);
 
 			// For every pair of transitions from current states
-			for (SFAInputMove<A, B> t1 : aut1.getInputMovesFrom(st1)) {
-				for (SFAInputMove<A, B> t2 : aut2.getInputMovesFrom(st2)) {
+			for (SFAInputMove<A, B> t1 : autNoEpsilon.getInputMovesFrom(st1)) {
+				for (SFAInputMove<A, B> t2 : autNoEpsilon.getInputMovesFrom(st2)) {
 					
 					// Add transition to product SFA if conjunction is satisfiable
 					A intersGuard = ba.MkAnd(t1.guard, t2.guard);
@@ -1717,23 +1682,12 @@ public class SFA<P, S> extends Automaton<P, S> {
 						
 						// To state is ambiguous if component states are different
 						// or current state is ambiguous
-						boolean toAmbiguous = isAmbiguous || t1.to != t2.to;
+						boolean toStateAmbiguous = isStateAmbiguous || t1.to != t2.to;
 
 						// Create new product transition and add it to transitions
 						Pair<Pair<Integer, Integer>, Boolean> nextState = new Pair<Pair<Integer, Integer>, Boolean>(
-								new Pair<Integer, Integer>(t1.to, t2.to), toAmbiguous);
-						int nextStateId = 0;
-
-						if (!reached.containsKey(nextState)) {
-							nextStateId = totStates;
-							product.inputMovesTo.put(nextStateId, new HashSet<SFAInputMove<A, B>>());
-							reached.put(nextState, nextStateId);
-							toVisit.add(nextState);
-							product.states.add(nextStateId);
-							totStates++;
-						} else
-							nextStateId = reached.get(nextState);
-
+								new Pair<Integer, Integer>(Math.min(t1.to, t2.to), Math.max(t1.to, t2.to)), toStateAmbiguous);
+						int nextStateId = getStateId(nextState, reached, toVisit, product);
 						product.addTransition(new SFAInputMove<A, B>(currStateId, nextStateId, intersGuard), ba, true);
 					}
 				}
@@ -1745,25 +1699,272 @@ public class SFA<P, S> extends Automaton<P, S> {
 	}
 	
 	/**
-	 * Returns ambiguous input accepted by automaton
+	 * Returns ambiguous input accepted by this SFA.
 	 * 
-	 * @return ambiguous input accepted by automaton,
-	 *         or null if automaton is unambiguous
+	 * @return ambiguous input accepted by automaton, or null if automaton is unambiguous
 	 * @throws TimeoutException
 	 */
-	public List<S> getAmbiguousInputV2(BooleanAlgebra<P, S> ba) throws TimeoutException {
-		return getAmbiguousInputV2(this, ba);
+	public List<S> getAmbiguousInputStearnsHunt(BooleanAlgebra<P, S> ba) throws TimeoutException {
+		return getAmbiguousInputStearnsHunt(this, ba);
 	}
 	
 	/**
-	 * Returns ambiguous input accepted by <code>aut</code>
+	 * Returns ambiguous input accepted by <code>aut</code>.
 	 * 
-	 * @return ambiguous input accepted by <code>aut</code>,
-	 *         or null if <code>aut</code> is unambiguous
+	 * @return ambiguous input accepted by <code>aut</code>, or null if <code>aut</code> is unambiguous
 	 * @throws TimeoutException
 	 */
-	public static <A, B> List<B> getAmbiguousInputV2(SFA<A, B> aut, BooleanAlgebra<A, B> ba) throws TimeoutException {
+	public static <A, B> List<B> getAmbiguousInputStearnsHunt(SFA<A, B> aut, BooleanAlgebra<A, B> ba) throws TimeoutException {
 		return getAmbiguousInputsSFA(aut, ba).getWitness(ba);
+	}
+
+	
+	/**
+	 * Returns an SFA that accepts only inputs that are at least k-ambiguous for this SFA
+	 * (i.e. can be produced at least k ways). Uses Stearns and Hunt's algorithm.
+	 * 
+	 * @param k minimum degree of ambiguity to accept
+	 * @return product SFA that accepts inputs that are k-ambiguous for this SFA
+	 * @throws TimeoutException
+	 */
+	public SFA<P, S> getKAmbiguousInputsSFA(BooleanAlgebra<P, S> ba, int k) throws TimeoutException {
+		return getKAmbiguousInputsSFA(this, ba, k);
+	}
+	
+	/**
+	 * Returns an SFA that accepts only inputs that are at least k-ambiguous for <code>aut</code>
+	 * (i.e. can be produced at least k ways). Uses Stearns and Hunt's algorithm.
+	 * 
+	 * @param k minimum degree of ambiguity to accept
+	 * @return product SFA that accepts inputs that are k-ambiguous for <code>aut</code>
+	 * @throws TimeoutException
+	 */
+	public static <A, B> SFA<A, B> getKAmbiguousInputsSFA(SFA<A, B> aut, BooleanAlgebra<A, B> ba, int k) throws TimeoutException {
+		
+		SFA<A, B> autNoEpsilon = removeEpsilonMovesFrom(aut, ba);
+		SFA<A, B> product = new SFA<A, B>();
+		
+		// Map product states to IDs
+		// Product state contains two components: state IDs of component automata
+		// + pairwise ambiguity matrix
+		HashMap<Pair<ArrayList<Integer>, ArrayList<ArrayList<Boolean>>>, Integer> reached = new HashMap<Pair<ArrayList<Integer>, ArrayList<ArrayList<Boolean>>>, Integer>();
+		// list on unexplored product states
+		LinkedList<Pair<ArrayList<Integer>, ArrayList<ArrayList<Boolean>>>> toVisit = new LinkedList<Pair<ArrayList<Integer>, ArrayList<ArrayList<Boolean>>>>();
+		
+		// The initial state is a vector consisting of the initial states of all automata (= 0)
+		// + ambiguity matrix w/ all false
+		Pair<ArrayList<Integer>, ArrayList<ArrayList<Boolean>>> initState = new Pair<ArrayList<Integer>, ArrayList<ArrayList<Boolean>>>(
+				new ArrayList<Integer>(k), new ArrayList<ArrayList<Boolean>>(k));
+		for (int i = 0; i < k; i++) {
+			initState.first.add(autNoEpsilon.initialState);
+			ArrayList<Boolean> row = new ArrayList<Boolean>(k);
+			for (int j = 0; j < k; j++) {
+				row.add(new Boolean(false));
+			}
+			initState.second.add(row);
+		}
+		product.initialState = 0;
+		product.states.add(0);
+		
+		reached.put(initState, 0);
+		toVisit.add(initState);
+
+		while (!toVisit.isEmpty()) {
+			
+			// For every reachable set of substates
+			Pair<ArrayList<Integer>, ArrayList<ArrayList<Boolean>>> currState = toVisit.removeFirst();
+			int currStateId = reached.get(currState);
+			ArrayList<Integer> currSubstates = currState.first;
+			ArrayList<ArrayList<Boolean>> currAmbiguity = currState.second;
+
+			// Product state is final if all substates are final and all paths are distinct
+			if (areSubstatesFinal(autNoEpsilon, currSubstates) && isStateAmbiguous(currAmbiguity)) {
+				product.finalStates.add(currStateId);
+			}
+
+			// For every combination of transitions from current substates
+			LinkedList<Pair<ArrayList<SFAInputMove<A, B>>, A>> transitionsOut = genTransitionsForKAmb(autNoEpsilon, ba, currSubstates, 0);
+			for (Pair<ArrayList<SFAInputMove<A, B>>, A> transitionCombo : transitionsOut) {
+				
+				// Get and sort list of to substates
+				ArrayList<Integer> toStates = new ArrayList<Integer>(k);
+				for (SFAInputMove<A, B> transition : transitionCombo.first) {
+					toStates.add(transition.to);
+				}
+				Collections.sort(toStates);
+				
+				// Update ambiguity matrix of to state based on current state
+				ArrayList<ArrayList<Boolean>> toStateAmbiguity = updateAmbiguity(toStates, currAmbiguity);
+
+				// Add state and transition
+				Pair<ArrayList<Integer>, ArrayList<ArrayList<Boolean>>> nextState = new Pair<ArrayList<Integer>, ArrayList<ArrayList<Boolean>>>(toStates, toStateAmbiguity);
+				int nextStateId = getStateId(nextState, reached, toVisit, product);
+				product.addTransition(new SFAInputMove<A, B>(currStateId, nextStateId, transitionCombo.second), ba, true);
+			}
+		}
+
+		product = removeDeadOrUnreachableStates(product, ba);
+		return product;
+	}
+	
+	/**
+	 * Given list of states, check if all states are final.
+	 * 
+	 * @return true if all states are final, false otherwise
+	 */
+	private static <A, B> boolean areSubstatesFinal(SFA<A, B> aut, ArrayList<Integer> states) {
+		
+		for (int state : states) {
+			if (!aut.isFinalState(state)) {
+				return false;
+			}
+		}
+		
+		return true;
+	}
+	
+	/**
+	 * Given ambiguity matrix, check if all pairs of states are distinct.
+	 * 
+	 * @return true if all pairs of states are distinct, false otherwise
+	 */
+	private static boolean isStateAmbiguous(ArrayList<ArrayList<Boolean>> ambiguity) {
+		
+		int k = ambiguity.size();
+		for (int i = 0; i < k; i++) {
+			for (int j = i + 1; j < k; j++) {
+				if (!ambiguity.get(i).get(j)) {
+					return false;
+				}
+			}
+		}
+		
+		return true;
+	}
+	
+	/**
+	 * Given current combination of states, (recursively) return all satisfiable sets of outgoing transitions.
+	 * 
+	 * @param index ordinal index of state to process transitions for at this level
+	 * @return list of all satisfiable sets of outgoing transitions from current states
+	 *         as pairs of transition set and guard-after-intersection
+	 */
+	@SuppressWarnings("unchecked")
+	private static <A, B> LinkedList<Pair<ArrayList<SFAInputMove<A, B>>, A>> genTransitionsForKAmb(SFA<A, B> aut,
+			BooleanAlgebra<A, B> ba, ArrayList<Integer> currSubstates, int index) throws TimeoutException {
+		
+		// list of transition combinations, each combination tagged w/ intersected guard
+		LinkedList<Pair<ArrayList<SFAInputMove<A, B>>, A>> transitions = new LinkedList<Pair<ArrayList<SFAInputMove<A, B>>, A>>();
+		// list of transitions from current substate (= substate at index)
+		Collection<SFAInputMove<A, B>> transFromSubstate = aut.getInputMovesFrom(currSubstates.get(index));
+		
+		// If last state in list, just return transitions
+		if (index == currSubstates.size() - 1) {
+			for (SFAInputMove<A, B> transition : transFromSubstate) {
+				ArrayList<SFAInputMove<A, B>> transitionCombo = new ArrayList<SFAInputMove<A, B>>(currSubstates.size());
+				transitionCombo.add(transition);  // add transition as first in combo list
+				transitions.add(new Pair<ArrayList<SFAInputMove<A, B>>, A>(transitionCombo, transition.guard));
+			}
+			return transitions;
+		}
+		
+		// Otherwise, intersect current substate's transitions with transition combos from recursive step
+		// If intersection satisfiable, add transition to transition combo
+		LinkedList<Pair<ArrayList<SFAInputMove<A, B>>, A>> otherTransitions = genTransitionsForKAmb(aut, ba, currSubstates, index + 1);
+		for (SFAInputMove<A, B> transition : transFromSubstate) {
+			for (Pair<ArrayList<SFAInputMove<A, B>>, A> otherTransCombo : otherTransitions) {
+				A intersGuard = ba.MkAnd(transition.guard, otherTransCombo.second);
+				if (!ba.IsSatisfiable(intersGuard)) {
+					continue;
+				}
+				ArrayList<SFAInputMove<A, B>> transitionCombo = (ArrayList<SFAInputMove<A, B>>) otherTransCombo.first.clone();
+				transitionCombo.add(transition);
+				transitions.add(new Pair<ArrayList<SFAInputMove<A, B>>, A>(transitionCombo, intersGuard));
+			}
+		}
+		
+		return transitions;
+	}
+	
+	/**
+	 * Given current states and current ambiguity matrix, returns updated ambiguity matrix.
+	 * 
+	 * @return updated pairwise ambiguity matrix
+	 */
+	private static ArrayList<ArrayList<Boolean>> updateAmbiguity(ArrayList<Integer> states, ArrayList<ArrayList<Boolean>> prevAmbiguity) {
+		
+		int k = states.size();
+		ArrayList<ArrayList<Boolean>> ambiguity = new ArrayList<ArrayList<Boolean>>(k);
+		for (int i = 0; i < k; i++) {
+			ArrayList<Boolean> row = new ArrayList<Boolean>(k);
+			for (int j = 0; j < k; j++) {
+				if (i == j) {  // same path
+					row.add(new Boolean(false));
+				} else if (prevAmbiguity.get(i).get(j)) {  // pair distinct if previously distinct
+					row.add(new Boolean(true));
+				} else if (states.get(i) != states.get(j)) {  // pair distinct if states different
+					row.add(new Boolean(true));
+				} else {
+					row.add(new Boolean(false));
+				}
+			}
+			ambiguity.add(row);
+		}
+		
+		return ambiguity;
+	}
+	
+	/**
+	 * Returns k-ambiguous input accepted by this SFA.
+	 * 
+	 * @return k-ambiguous input accepted by automaton, or null if automaton is < k ambiguous
+	 * @throws TimeoutException
+	 */
+	public List<S> getKAmbiguousInput(BooleanAlgebra<P, S> ba, int k) throws TimeoutException {
+		return getKAmbiguousInput(this, ba, k);
+	}
+	
+	/**
+	 * Returns k-ambiguous input accepted by <code>aut</code>.
+	 * 
+	 * @return k-ambiguous input accepted by <code>aut</code>, or null if <code>aut</code> is < k ambiguous
+	 * @throws TimeoutException
+	 */
+	public static <A, B> List<B> getKAmbiguousInput(SFA<A, B> aut, BooleanAlgebra<A, B> ba, int k) throws TimeoutException {
+		return getKAmbiguousInputsSFA(aut, ba, k).getWitness(ba);
+	}
+	
+	/**
+	 * Returns maximum degree of ambiguity for this SFA (i.e. max number of distinct ways to produce
+	 * a single string). Uses Stearns and Hunt's algorithm.
+	 * 
+	 * @return maximum degree of ambiguity for this SFA
+	 * @throws TimeoutException
+	 */
+	public int getMaxAmbiguity(BooleanAlgebra<P, S> ba, int limit) throws TimeoutException {
+		return getMaxAmbiguity(this, ba, limit);
+	}
+	
+	/**
+	 * Returns maximum degree of ambiguity for <code>aut</code> (i.e. max number of distinct ways to produce
+	 * a single string). Uses Stearns and Hunt's algorithm.
+	 * 
+	 * @return maximum degree of ambiguity for <code>aut</code>
+	 * @throws TimeoutException
+	 */
+	public static <A, B> int getMaxAmbiguity(SFA<A, B> aut, BooleanAlgebra<A, B> ba, int limit) throws TimeoutException {
+		
+		int degAmbiguous = 1;  // 1 = unambiguous
+		SFA<A, B> product = aut;
+		while (!product.isEmpty()) {
+			degAmbiguous++;
+			if (degAmbiguous > limit) {
+				break;
+			}
+			product = getKAmbiguousInputsSFA(aut, ba, degAmbiguous);
+		}
+		
+		return degAmbiguous - 1;
 	}
 
 	/**
@@ -2053,6 +2254,27 @@ public class SFA<P, S> extends Automaton<P, S> {
 		for (Integer state : states)
 			transitions.addAll(getTransitionsFrom(state));
 		return transitions;
+	}
+
+	// ----------------------------------------------------
+	// Misc utility methods
+	// ----------------------------------------------------
+
+	/**
+	 * If <code>state<code> belongs to reached returns reached(state) otherwise
+	 * add state to reached and to toVisit and return corresponding id.
+	 * Updated to add and initialize state in target automaton.
+	 */
+	private static <T, A, B> int getStateId(T state, Map<T, Integer> reached, LinkedList<T> toVisit, SFA<A, B> targetAut) {
+		if (!reached.containsKey(state)) {
+			int newId = reached.size();
+			reached.put(state, newId);
+			toVisit.add(state);
+			targetAut.inputMovesTo.put(newId, new HashSet<SFAInputMove<A, B>>());
+			targetAut.states.add(newId);
+			return newId;
+		} else
+			return reached.get(state);
 	}
 
 	// ----------------------------------------------------
